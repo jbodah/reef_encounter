@@ -1,9 +1,28 @@
 # ReefEncounter
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/reef_encounter`. To experiment with that code, run `bin/console` for an interactive prompt.
+implementation of [Reef Encounter](https://boardgamegeek.com/boardgame/12962/reef-encounter)
 
-TODO: Delete this and the text above, and describe your gem
+## Getting Started
 
+```sh
+# Install rbenv
+brew install rbenv
+
+# Install ruby-build
+brew install ruby-build
+
+# Install Ruby 2.2.3
+rbenv install 2.1.3
+rbenv global 2.1.3
+
+# Install bundler
+gem install bundler
+rbenv rehash
+
+# Install dependencies and run tests
+bundle install
+bundle exec rake
+```
 ## Installation
 
 Add this line to your application's Gemfile:

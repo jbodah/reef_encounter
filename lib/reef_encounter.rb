@@ -4,8 +4,39 @@ module ReefEncounter
   class OpenSeaBoard
     attr_reader :coral_tiles
 
+    class Space
+      attr_accessor :larva_cube
+      attr_reader :larva_cube_color, :tiles
+
+      def initialize(larva_cube_color)
+        @larva_cube_color = larva_cube_color
+        @tiles = []
+      end
+
+      def add_tiles(*tiles)
+        tiles.each { |t| add_tile(t) }
+      end
+
+      def add_tile(tile)
+        @tiles << tile
+      end
+    end
+
     def initialize
       @coral_tiles = CoralTile.initial_distribution
+      @spaces = LarvaCube.available_colors.map do |c|
+        Space.new(c)
+      end
+    end
+
+    def each_space
+      enum = Enumerator.new do |yielder|
+        @spaces.each do |space|
+          yielder.yield space
+        end
+      end
+
+      block_given? ? enum.each(&Proc.new) : enum
     end
   end
 
@@ -45,12 +76,37 @@ module ReefEncounter
   end
 
   class LarvaCube
+    # Helper class
+    class Supply
+      def initialize(cubes)
+        @cubes_by_color = cubes.reduce({}) do |hsh, cube|
+          hsh[cube.color] ||= []
+          hsh[cube.color] << cube
+          hsh
+        end
+      end
+
+      # TODO optimize
+      def draw_colors(*colors)
+        colors.map { |c| draw_color(c) }
+      end
+
+      def draw_color(color)
+        raise if @cubes_by_color[color].empty?
+        @cubes_by_color[color].pop
+      end
+
+      def replace(*cubes)
+        cubes.each { |c| @cubes_by_color[c.color] << c }
+      end
+    end
+
     def self.available_colors
       %i{grey orange pink white yellow}
     end
 
     def self.initial_distribution
-      10.times.map { available_colors.map { |c| new(c) } }
+      10.times.flat_map { available_colors.map { |c| new(c) } }
     end
 
     attr_reader :color
@@ -298,9 +354,9 @@ module ReefEncounter
       size == 0
     end
 
-    def draw
+    def draw(n = 1)
       raise "Can't draw! Tile Bag is empty!" if empty?
-      @tiles.pop
+      (n > 1) ? @tiles.pop(n) : @tiles.pop
     end
 
     # TODO could be optimized
@@ -328,20 +384,45 @@ module ReefEncounter
   class Game
     attr_reader :players, :coral_reef_boards, :open_sea_board, :tile_bag
 
+    alias_method :player_order, :players
+
     def initialize(num_players)
       @players = Player.available_colors.first(num_players).map do |c|
         Player.new(c)
-      end
+      end.shuffle
       @tile_bag = TileBag.new(PolypTile.initial_distribution)
       @coral_reef_boards = CoralReefBoard.starting_boards.shuffle.first(num_players)
       @open_sea_board = OpenSeaBoard.new
+      larva_cubes = LarvaCube.initial_distribution
+      @larva_cube_supply = LarvaCube::Supply.new(larva_cubes)
     end
 
     def prepare
+      prepare_coral_reef_boards
+      prepare_open_sea_board
+    end
+
+    private
+
+    def prepare_coral_reef_boards
       tile_colors = PolypTile.available_colors
       @coral_reef_boards.each do |board|
-        tiles = tile_bag.draw_colors(*PolypTile.available_colors)
+        tiles = tile_bag.draw_colors(*tile_colors)
         board.add_starting_tiles(tiles)
+      end
+    end
+
+    def prepare_open_sea_board
+      # TODO optimize
+      cube_colors = LarvaCube.available_colors 
+      @open_sea_board.each_space do |space|
+        space.larva_cube = @larva_cube_supply.draw_color(space.larva_cube_color)
+      end
+
+      # todo randomly select color and add 3, 3, 3, 2, 1
+      tile_sets = [3, 3, 3, 2, 1].map { |num_tiles| @tile_bag.draw(num_tiles) }
+      @open_sea_board.each_space do |space|
+        space.add_tiles(*tile_sets.pop)
       end
     end
   end

@@ -89,7 +89,59 @@ module ReefEncounter
           game = Game.new(num_players)
           game.prepare
           game.coral_reef_boards.each {|b| assert_equal 5, b.count_tiles}
-          assert_equal 200 - (num_players * 5), game.tile_bag.size
+        end
+      end
+
+      describe 'the open sea board' do
+        before do
+          @game = Game.new(2)
+          @game.prepare
+        end
+
+        it 'places one larva cube of each color onto the spaces' do
+          assert_equal 5, @game.open_sea_board.each_space.map(&:larva_cube).size
+          assert_equal 5, @game.open_sea_board.each_space.map(&:larva_cube).map(&:color).uniq.size
+        end
+
+        it 'places 3 polyp tiles on three spaces, 2 on one, and 1 on the other' do
+          expected = [3, 3, 3, 2, 1]
+          @game.open_sea_board.each_space do |space|
+            num_tiles_on_space = space.tiles.size
+            idx = expected.index(num_tiles_on_space)
+            expected.delete_at(idx)
+          end
+          assert expected.empty?
+        end
+      end
+
+      describe 'the tile bag' do
+        it 'has 5 tiles removed for each player plus 12 for the open sea board' do
+          (1..4).to_a.each do |num_players|
+            game = Game.new(num_players)
+            game.prepare
+            assert_equal 200 - (num_players * 5) - 12, game.tile_bag.size
+          end
+        end
+      end
+    end
+
+    describe 'Game#player_order' do
+      it 'has a unique place for each player' do
+        (2..4).to_a.each do |num_players|
+          game = Game.new(num_players)
+          assert game.players.all? { |p| game.player_order.include?(p) }
+          assert_equal game.players.size, game.player_order.size
+        end
+      end
+
+      it 'is randomized' do
+        (2..4).to_a.each do |num_players|
+          player_orders = 10.times.map do
+            game = Game.new(num_players)
+            game.player_order.map(&:color)
+          end
+          assert player_orders.uniq.size > 1,
+            'expected more than one player order to be generated'
         end
       end
     end
