@@ -1,5 +1,11 @@
 require 'reef_encounter/version'
 
+class String
+  def pluralize(val)
+    val == 1 ? self : self + 's'
+  end
+end
+
 module ReefEncounter
   class OpenSeaBoard
     attr_reader :coral_tiles
@@ -49,9 +55,17 @@ module ReefEncounter
 
     def initialize(color)
       @color = color
-      @shrimp = 4.times.map { Shrimp.new(color) }
       @parrot_fish = ParrotFish.new(color)
       @player_screen = PlayerScreen.new(color)
+      @player_screen.behind.shrimp = 4.times.map { Shrimp.new(color) }
+    end
+
+    def to_s
+      "#{@color} player".capitalize
+    end
+
+    def supply_report
+      "In Front of Screen: #{@player_screen.in_front_of}\nBehind Screen: #{@player_screen.behind}"
     end
   end
 
@@ -130,6 +144,14 @@ module ReefEncounter
     def initialize(color)
       @color = color
     end
+
+    def to_s
+      @color
+    end
+
+    def <=>(o)
+      @color <=> o.color
+    end
   end
 
   class CoralTile
@@ -186,6 +208,11 @@ module ReefEncounter
   class ParrotFish
     def initialize(color)
       @color = color
+      @eatten = []
+    end
+
+    def eat(thing)
+      @eatten << thing
     end
   end
 
@@ -333,8 +360,28 @@ module ReefEncounter
   end
 
   class PlayerScreen
+    class Position
+      attr_accessor :shrimp, :tiles, :cubes
+
+      def initialize
+        @shrimp = []
+        @tiles = []
+        @cubes = []
+      end
+
+      def to_s
+        (["#{@shrimp.size} shrimp"] +
+          @tiles.group_by(&:color).map {|color, set| "#{set.size} #{color} #{'tile'.pluralize(set.size)}"} +
+          @cubes.group_by(&:color).map {|color, set| "#{set.size} #{color} #{'cube'.pluralize(set.size)}"}).join(', ')
+      end
+    end
+
+    attr_reader :behind, :in_front_of
+
     def initialize(color)
       @color = color
+      @behind = PlayerScreen::Position.new
+      @in_front_of = PlayerScreen::Position.new
     end
   end
 
@@ -382,11 +429,36 @@ module ReefEncounter
   end
 
   class Game
+    class IO
+      def puts(s)
+        $stdout.puts(s)
+      end
+
+      def gets
+        $stdin.gets
+      end
+
+      def prompt_player(player, msg, choices)
+        puts "\n#{player}, #{msg}"
+        choices.sort!
+        choices.each_with_index do |c, idx|
+          puts "\t#{idx}. #{c.to_s}"
+        end
+        # Todo find something better
+        puts "\n#{player.supply_report}"
+        choice_idx = gets.strip
+        # todo validate
+        choices[choice_idx.to_i]
+      end
+    end
+
     attr_reader :players, :coral_reef_boards, :open_sea_board, :tile_bag
 
     alias_method :player_order, :players
 
-    def initialize(num_players)
+    def initialize(num_players, io = Game::IO.new)
+      raise 'Invalid number of players' unless [2, 3, 4].include?(num_players)
+
       @players = Player.available_colors.first(num_players).map do |c|
         Player.new(c)
       end.shuffle
@@ -395,16 +467,59 @@ module ReefEncounter
       @open_sea_board = OpenSeaBoard.new
       larva_cubes = LarvaCube.initial_distribution
       @larva_cube_supply = LarvaCube::Supply.new(larva_cubes)
+      @io = io
     end
 
     def prepare
       prepare_coral_reef_boards
       prepare_open_sea_board
+      prepare_player_resources
+    end
+
+    def start
+      @io.puts 'Starting game...'
+      prompt_each_player_to_select_tile_for_parrot_fish
+      prompt_each_player_to_choose_two_cubes
     end
 
     private
 
+    def prompt_each_player_to_choose_two_cubes
+      @players.each do |p|
+        2.times do
+          color = @io.prompt_player(p, "please select a larva cube to put beind your player screen",
+                                    LarvaCube.available_colors)
+          cube = @larva_cube_supply.draw_color(color)
+          p.player_screen.behind.cubes << cube
+        end
+      end
+    end
+
+    def prompt_each_player_to_select_tile_for_parrot_fish
+      @players.each do |p|
+        tile = @io.prompt_player(p, "please select a polyp tile to put in your parrot fish",
+                                 p.player_screen.behind.tiles)
+        p.player_screen.behind.tiles.delete(tile)
+        p.parrot_fish.eat(tile)
+      end
+    end
+
+    def prepare_player_resources
+      @io.puts 'Preparing the player resources...'
+      queue = case @players.size
+              when 2 then [6, 9]
+              when 3 then [6, 7, 9]
+              when 4 then [6, 7, 8, 9]
+              else
+                raise
+              end
+      player_order.each do |p|
+        p.player_screen.behind.tiles += @tile_bag.draw(queue.shift)
+      end
+    end
+
     def prepare_coral_reef_boards
+      @io.puts 'Preparing the coral reef boards...'
       tile_colors = PolypTile.available_colors
       @coral_reef_boards.each do |board|
         tiles = tile_bag.draw_colors(*tile_colors)
@@ -414,6 +529,7 @@ module ReefEncounter
 
     def prepare_open_sea_board
       # TODO optimize
+      @io.puts 'Preparing the open sea board...'
       cube_colors = LarvaCube.available_colors 
       @open_sea_board.each_space do |space|
         space.larva_cube = @larva_cube_supply.draw_color(space.larva_cube_color)

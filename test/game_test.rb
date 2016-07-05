@@ -2,29 +2,33 @@ require 'test_helper'
 
 module ReefEncounter
   class GameTest < Minitest::Spec
+    def make_game(num_players)
+      Game.new(num_players, StringIO.new)
+    end
+
     describe 'Game#initialize' do
       it 'accepts a number of players and creates that many players' do
-        (1..4).to_a.each do |num_players|
-          game = Game.new(num_players)
+        (2..4).to_a.each do |num_players|
+          game = make_game(num_players)
           assert_equal num_players, game.players.size
         end
       end
 
       it 'has a number of coral reef boards equal to the number of players' do
-        (1..4).to_a.each do |num_players|
-          game = Game.new(num_players)
+        (2..4).to_a.each do |num_players|
+          game = make_game(num_players)
           assert_equal num_players, game.coral_reef_boards.size
         end
       end
 
       it 'has an open sea board' do
-        game = Game.new(2)
+        game = make_game(2)
         assert !game.open_sea_board.nil?
       end
 
       describe 'the open sea board' do
         before do
-          @game = Game.new(2)
+          @game = make_game(2)
         end
 
         it 'has 10 coral tiles' do
@@ -38,37 +42,37 @@ module ReefEncounter
 
       describe 'the players' do
         it 'gives each a unique color' do
-          (1..4).to_a.each do |num_players|
-            game = Game.new(num_players)
+          (2..4).to_a.each do |num_players|
+            game = make_game(num_players)
             assert_equal num_players, game.players.map(&:color).uniq.compact.size
           end
         end
 
         it 'gives each a player screen does things' do
-          (1..4).to_a.each do |num_players|
-            game = Game.new(num_players)
+          (2..4).to_a.each do |num_players|
+            game = make_game(num_players)
             assert game.players.all?(&:player_screen)
           end
         end
 
         it 'gives each a parrot_fish' do
-          (1..4).to_a.each do |num_players|
-            game = Game.new(num_players)
+          (2..4).to_a.each do |num_players|
+            game = make_game(num_players)
             assert game.players.all?(&:parrot_fish)
           end
         end
 
         it 'gives each player 4 shrimp' do
-          (1..4).to_a.each do |num_players|
-            game = Game.new(num_players)
-            assert game.players.all? { |p| p.shrimp.size == 4 }
+          (2..4).to_a.each do |num_players|
+            game = make_game(num_players)
+            assert game.players.all? { |p| p.player_screen.behind.shrimp.size == 4 }
           end
         end
       end
 
       describe 'the tile bag' do
         it 'has 200 polyp tiles, 40 of each color' do
-          game = Game.new(2)
+          game = make_game(2)
           assert_equal 200, game.tile_bag.size
 
           color_counts = {}
@@ -85,16 +89,36 @@ module ReefEncounter
 
     describe 'Game#prepare' do
       it 'draws 5 tiles from the bag and adds them to each coral reef board' do
-        (1..4).to_a.each do |num_players|
-          game = Game.new(num_players)
+        (2..4).to_a.each do |num_players|
+          game = make_game(num_players)
           game.prepare
           game.coral_reef_boards.each {|b| assert_equal 5, b.count_tiles}
         end
       end
 
+      it 'distributes the correct number of tiles to each player' do
+        game = make_game(2)
+        game.prepare
+        assert_equal 6, game.player_order[0].player_screen.behind.tiles.size
+        assert_equal 9, game.player_order[1].player_screen.behind.tiles.size
+
+        game = make_game(3)
+        game.prepare
+        assert_equal 6, game.player_order[0].player_screen.behind.tiles.size
+        assert_equal 7, game.player_order[1].player_screen.behind.tiles.size
+        assert_equal 9, game.player_order[2].player_screen.behind.tiles.size
+
+        game = make_game(4)
+        game.prepare
+        assert_equal 6, game.player_order[0].player_screen.behind.tiles.size
+        assert_equal 7, game.player_order[1].player_screen.behind.tiles.size
+        assert_equal 8, game.player_order[2].player_screen.behind.tiles.size
+        assert_equal 9, game.player_order[3].player_screen.behind.tiles.size
+      end
+
       describe 'the open sea board' do
         before do
-          @game = Game.new(2)
+          @game = make_game(2)
           @game.prepare
         end
 
@@ -115,11 +139,21 @@ module ReefEncounter
       end
 
       describe 'the tile bag' do
-        it 'has 5 tiles removed for each player plus 12 for the open sea board' do
-          (1..4).to_a.each do |num_players|
-            game = Game.new(num_players)
+        it 'has remove 5 tiles for each player for the coral reef boards,
+            12 for the open sea board,
+            and the appropriate number for each players starting hand' do
+          (2..4).to_a.each do |num_players|
+            game = make_game(num_players)
             game.prepare
-            assert_equal 200 - (num_players * 5) - 12, game.tile_bag.size
+            working_total = 200
+            working_total -= (num_players * 5)
+            working_total -= 12
+            case num_players
+            when 2 then working_total -= (6 + 9)
+            when 3 then working_total -= (6 + 7 + 9)
+            when 4 then working_total -= (6 + 7+ 8 + 9)
+            end
+            assert_equal working_total, game.tile_bag.size
           end
         end
       end
@@ -128,7 +162,7 @@ module ReefEncounter
     describe 'Game#player_order' do
       it 'has a unique place for each player' do
         (2..4).to_a.each do |num_players|
-          game = Game.new(num_players)
+          game = make_game(num_players)
           assert game.players.all? { |p| game.player_order.include?(p) }
           assert_equal game.players.size, game.player_order.size
         end
@@ -137,7 +171,7 @@ module ReefEncounter
       it 'is randomized' do
         (2..4).to_a.each do |num_players|
           player_orders = 10.times.map do
-            game = Game.new(num_players)
+            game = make_game(num_players)
             game.player_order.map(&:color)
           end
           assert player_orders.uniq.size > 1,
